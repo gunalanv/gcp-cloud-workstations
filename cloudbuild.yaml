@@ -1,8 +1,14 @@
 steps:
-- name: 'gcr.io/cloud-builders/docker'
-  script: |
-    docker build -t us-west2-docker.pkg.dev/$PROJECT_ID/custom-workstation-repo/workstation-image:tag1 .
-  automapSubstitutions: true
-  env: 'DOCKER_BUILDKIT=1'
-images:
-- 'us-west2-docker.pkg.dev/$PROJECT_ID/custom-workstation-repo/workstation-image:tag1'
+  # Docker Build
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 
+           'us-west2-docker.pkg.dev/$PROJECT_ID/custom-workstation-repo/workstation-image:tag1', 
+           '.']
+    automapSubstitutions: true
+    env: 
+      - 'DOCKER_BUILDKIT=1'
+
+  # Docker Push
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 
+           'us-west2-docker.pkg.dev/$PROJECT_ID/custom-workstation-repo/workstation-image:tag1']
