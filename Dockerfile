@@ -18,8 +18,34 @@
 # NOTE: This dockerfile uses heredoc syntax (indicated in the first line of this
 # dockerfile). Ensure you set DOCKER_BUILDKIT=1 when building:
 # DOCKER_BUILDKIT=1 docker build -t code-oss-cuttlefish-browselite .
+#######################################################
+# Builder container for cuttlefish
+#######################################################
+
+FROM us-central1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss as cuttlefish-builder
+
+RUN apt-get update && apt-get install -y \
+    git \
+    devscripts \
+    equivs \
+    config-package-dev \
+    debhelper-compat \
+    golang \
+    curl && \
+    # Note: to harden security profile you could checkout a known version and
+    # validate the checksum before building.
+    git clone https://github.com/google/android-cuttlefish && \
+  /android-cuttlefish/tools/buildutils/build_packages.sh && \
+  mkdir out && \
+  cp /android-cuttlefish/cuttlefish-base_*_*64.deb /out && \
+  cp /android-cuttlefish/cuttlefish-user_*_*64.deb /out
+
+#######################################################
+# End Cuttlefish
+#######################################################
 
 FROM us-central1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss
+
 
 # Install repo and rsync
 RUN apt-get update && apt-get install -y \
@@ -28,6 +54,15 @@ RUN apt-get update && apt-get install -y \
   #smoke tests
   repo version && \
   rsync --version
+
+# Install Cuttlefish from builder
+COPY --from=cuttlefish-builder /out /cuttlefish
+RUN dpkg -i /cuttlefish/cuttlefish-base_*_*64.deb || \
+    apt-get install -f -y --no-install-recommends && \
+  dpkg -i /cuttlefish/cuttlefish-user_*_*64.deb || \
+    apt-get install -f -y --no-install-recommends && \
+  rm -rf /cuttlefish && \
+  apt-get update && apt-get install -y kmod
 
 # Install google-chrome
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
@@ -63,5 +98,23 @@ fi
 EOF
 
 RUN chmod 755 /etc/workstation-startup.d/210_configure_browselite.sh
+
+# Add a startup script to set proper user permissions after user is added.
+RUN cat >> /etc/workstation-startup.d/011_nested_virtulization_and_cuttlefish_permissions.sh <<-EOF
+#!/bin/bash
+echo "Setting cuttlefish permissions."
+usermod -aG kvm,cvdnetwork,render user
+
+EOF
+RUN chmod 755 /etc/workstation-startup.d/011_nested_virtulization_and_cuttlefish_permissions.sh
+
+# Add a startup script to bring up cuttlefish services
+RUN cat >> /etc/workstation-startup.d/200_start_cuttlefish_services.sh <<-EOF
+#!/bin/bash
+echo "Starting cuttlefish services"
+service cuttlefish-host-resources start
+service cuttlefish-operator start
+EOF
+RUN chmod 755 /etc/workstation-startup.d/200_start_cuttlefish_services.sh
 
 ENTRYPOINT ["/google/scripts/entrypoint.sh"]
